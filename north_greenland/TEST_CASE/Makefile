@@ -8,3 +8,8 @@ all: $(LIBS)
 
 clean:
 	rm -f $(LIBS)
+
+clean_test:
+	rm -f *.nc
+	rm -f *.dat*
+	rm -f xios*
