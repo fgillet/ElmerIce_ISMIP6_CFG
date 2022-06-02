@@ -1,0 +1,262 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Initialise required variables to run the simulations
+!
+! Author: F. Gillet-Chaulet (IGE-Grenoble-FR)
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!#######################################################
+!!# Parameters
+$name="test1"
+$suffix="0000"
+! Mesh directory
+$MESH="MESH_1"
+! Minimal ice thickness
+$HMin=0.9
+! Data sets to be interpolated on the mesh
+$TOPOGRAPHY_DATA="../Data/Topography/Topography.nc"
+$FRICTION_DATA="../Data/Friction/Friction.nc"
+$SMB_DATA="../Data/Forcing/SMB.nc"
+$DSMB_DATA="../Data/Forcing/dSMB.nc"
+!#######################################################
+include ../Parameters/Physical_Params_days.IN
+!#######################################################
+Header
+  Mesh DB "." "$MESH$"
+End
+!#######################################################
+!#######################################################
+Constants
+  sea level = Real $zsl
+  water density = Real $rhow
+End
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Simulation
+  Coordinate System  = Cartesian 2D
+
+  ! Greenland EPSG:3413
+  projection type = String "polar stereographic north"
+  central_meridian = Real -45.0
+  latitude_of_origin = Real 70.0
+
+  Simulation Type = Steady State
+
+  Steady State Min Iterations = 1
+  Steady State Max Iterations = 1
+
+  Output File = "$name$_$suffix$.result"
+  Post File = "$name$_$suffix$.vtu"
+  max output level = 3
+End
+!#######################################################
+!#######################################################
+Body 1
+  Equation = 1
+  Material = 1
+  Initial Condition = 1
+End
+!#######################################################
+!#######################################################
+Initial Condition 1
+! List of variable that must be initialised
+! to run the simulations
+ 
+ ! Topography
+  bedrock = Real 0.0 ! bed elevation
+  H = Real 0.0 ! ice thickness
+  GroundedMask = Real 0.0 ! grounded/floating mask
+  Zs= Real 0.0 ! top surface elevation
+  Zb= Real 0.0 ! bottom surace elavation
+ ! Material parameters
+  slc0=Real 0.0 ! slip coefficient
+  Mu= Real $0.25*(yearinsec/dayinsec)^(1.0/n) 
+  ! vertically averaged velocity
+
+  ssavelocity 1 = Real 0.0
+  ssavelocity 2 = Real 0.0
+
+  smb = Real 0.0
+  dsmb = Real 0.0
+ ! 
+End
+!#######################################################
+!#######################################################
+Material 1
+! Material properties
+  SSA Mean Density = Real $rhoi
+End
+!#######################################################
+!#######################################################
+!#######################
+! Read bedrock
+!#######################
+Solver 1
+  Exec Solver = Before Simulation
+  Equation = Reader
+    Procedure = "GridDataReader" "GridDataReader"
+    Variable = -nooutput dumy
+
+   Read full array = logical True
+!---- NOTE: File is case sensitive, String is not!
+   Filename = File "$TOPOGRAPHY_DATA$"
+
+   X Dim Name = String "x"
+   Y Dim Name = String "y"
+!--- 
+  Variable 1 = File "bed"
+  Target Variable 1 = String "bedrock"
+
+! exported variables  
+  Exported Variable 1 = bedrock
+  Exported Variable 2 = -dofs 2 "ssavelocity"
+End
+!#######################
+! Read thickness
+!#######################
+Solver 2
+  Exec Solver = Before Simulation
+  Equation = Reader2
+    Procedure = "Scattered2DDataInterpolator" "Scattered2DDataInterpolator"
+    Variable = -nooutput dumy2
+
+  Variable 1 = File "thickness"
+  Variable 1 data file = File "$TOPOGRAPHY_DATA$"
+  Variable 1 Valid Min Value  = Real $HMin
+  Target Variable 1  = String "H"
+
+!##
+  Exported Variable 1 = H
+End
+!#######################
+! Apply floatation 
+!  - define GroundedMask
+!  - get Zs and Zb from H and bedrock
+!#######################
+Solver 3
+  Exec Solver = Before Simulation
+   Equation = "Flotation"
+      Variable = GroundedMask
+      Procedure = "ElmerIceSolvers" "Flotation"
+
+   Exported Variable 1 = Zs
+   Exported Variable 2 = Zb
+End
+
+!#######################
+! Material parameter for the SSA
+!  - friction coefficient slc0
+!  - vertcially averaged viscosity
+!#######################
+Solver 4
+  Exec Solver = Before Simulation
+  Equation = Reader3
+    Procedure = "GridDataReader" "GridDataReader"
+    Variable = -nooutput dumy3
+
+   Read full array = logical True
+!---- NOTE: File is case sensitive, String is not!
+   Filename = File "$FRICTION_DATA$"
+
+   X Dim Name = String "x"
+   Y Dim Name = String "y"
+!--- 
+  Variable 1 = File "C1"
+  Target Variable 1 = String "slc0"
+
+  Interpolation Multiplier = Real $yearinsec/dayinsec
+
+! exported variables  
+  Exported Variable 1 = slc0
+  Exported Variable 2 = Mu
+End
+
+!#######################
+! forcing data sets
+!  - surface mass balance
+!  - surface mass balance anomaly
+!#######################
+Solver 5
+  Exec Solver = Before Simulation
+  Equation = Reader4
+  Procedure = "GridDataReader" "GridDataReader"
+  Variable = -nooutput dumy4
+
+   Read full array = Logical True
+ !---- NOTE: File is case sensitive, String is not!
+   Filename = File "$SMB_DATA$"
+  
+   X Dim Name = File "X"
+   Y Dim Name = File "Y"
+   X Var Name = File "X"
+   Y Var Name = File "Y"
+  !--- 
+   Variable 1 = File "SMB"
+   Target Variable 1 = String "smb"
+   Exported Variable 1 = smb
+
+! convert from
+   Interpolation Multiplier = Real $dayinsec/(yearinsec*910.0)
+End
+
+Solver 6
+  Exec Solver = Before Simulation
+  Equation = Reader5
+  Procedure = "GridDataReader" "GridDataReader"
+  Variable = -nooutput dumy5
+
+   Read full array = Logical True
+ !---- NOTE: File is case sensitive, String is not!
+   Filename = File "$DSMB_DATA$"
+   
+   X Dim Name = String "x"
+   Y Dim Name = String "y"
+  !---
+   Variable 1 = File "DSMB"
+   Target Variable 1 = String "dsmb"
+   Exported Variable 1 = dsmb
+
+  Interpolation Multiplier = Real $dayinsec/yearinsec
+End
+
+Solver 7
+   Exec Solver = After All
+
+   Equation = "XIOSOutPutSolve"
+   Procedure = "ElmerIceSolvers" "XIOSOutputSolver"
+   
+   time_units=String "1y"
+   timestep=String "1y"
+   timestep tolerance = Real 1.0
+   reference date=String "2014-01-01"
+
+   file names suffix = String "_$name$_$suffix$"
+
+! node and elem vars
+   Scalar Field 1 = String "h"
+   Scalar Field 2 = String "zs"
+   Scalar Field 3 = String "zb"
+   Scalar Field 4 = String "bedrock"
+   Scalar Field 5 = String "groundedmask"
+   Scalar Field 6 = String "mu"
+   Scalar Field 7 = String "slc0"
+   Scalar Field 8 = String "smb"
+   Scalar Field 9 = String "dsmb"
+   Scalar Field 10 = String "ssavelocity 1"
+   Scalar Field 11 = String "ssavelocity 2"
+
+End
+
+!#######################################################
+!#######################################################
+Equation 1
+  Active Solvers(7) = 1 2 3 4 5 6 7
+End
+
+!#####
+Boundary Condition 1
+  Target Boundaries = 1
+End
+Boundary Condition 2
+  Target Boundaries = 2
+End
+
+

@@ -1,0 +1,7 @@
+*.result*
+*vtu
+*.pvd
+*.nc
+xios_*
+*.out
+*.dat*
